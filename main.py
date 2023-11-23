@@ -66,11 +66,28 @@ class TSPGA:
 
     def create_neighbour_tour(self, tur):
         result = [0 for i in range(self.tspSize)]
-        for i in range(0, self.tspSize):
-            if result[i] != 0:
-                result[i] = tur[i+1]
-                tur.index[tur[i]]
+        for i in range(0, self.tspSize - 1):
+            result[tur[i] - 1] = tur[i + 1]
+        result[tur[-1] - 1] = tur[0]
+        return result
 
+    def from_neighbour_route(self, neighbour):
+        result = [0 for i in range(len(neighbour))]
+        result[0] = neighbour[0]
+        point = result[0]
+        for i in range(1, len(neighbour)):
+            result[i] = neighbour[point - 1]
+            point = neighbour[point - 1]
+        return result
+
+    def isCicle(self,neighbour):
+        tur = self.from_neighbour_route(neighbour)
+        for point in tur:
+            idx = abs(point)
+            if tur[idx] < 0:
+                return True
+            tur[idx] = -tur[idx]
+        return False
 
     def plotData(self, indices):
         # plot the dots representing the cities:
@@ -81,6 +98,26 @@ class TSPGA:
         # plot a line between each pair of consequtive cities:
         plt.plot(*zip(*locs), linestyle='-', color='blue')
         return plt
+    def alternating_edges(self):
+        for i in range(0, len(self.population)):
+            if random.uniform(0, 1) <= self.crossover_chance:
+                chrom_a = self.population[i]
+                chrom_b = self.population[random.randint(0, len(self.population)-1)]
+                chrom_a_b_, chrom_b_a_ = [0 for i in range(self.tspSize)]
+                for i in range(self.tspSize):
+                    idx = i % 2
+                    if idx == 0:
+                        chrom_a_b_[i] = chrom_b[i]
+                        chrom_b_a_[i] = chrom_a[i]
+                    else:
+                        chrom_a_b_[i] = chrom_a[i]
+                        chrom_b_a_[i] = chrom_b[i]
+
+                if not self.isCicle(chrom_a_b_):
+                    self.children.append(chrom_a_b_)
+                if not self.isCicle(chrom_b_a_):
+                    self.children.append(chrom_a_b_)
+
     def selection(self):
         reselected_population = []
         f = [self.getTotalDistance(tur) for tur in self.population]
