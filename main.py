@@ -17,6 +17,10 @@ class TSPGA:
         self.max_population = config['max_population']
         # Максимальное количество эпох
         self.max_epochs = config['max_epochs']
+        # Тип кроссовера
+        self.crossover_type = config['crossover_type']
+        # Тип мутации
+        self.mutation_type = config['mutation_type']
         # Актуальная эпоха
         self.current_epoch = 0
         # Вероятность кроссовера
@@ -28,9 +32,11 @@ class TSPGA:
         self.children = []
         # Лучшее решение актуальной популяции
         self.current_best_solution = sys.maxsize - 1
+        self.population = []
+        self.locations = []
+        self.read_file()
 
     def read_file(self):
-        self.locations = []
         with open("bayg29.txt") as f:
             lines = f.readlines()
             index = lines.index("DISPLAY_DATA_SECTION\n")
@@ -52,7 +58,7 @@ class TSPGA:
                     distance = np.linalg.norm(self.locations[j] - self.locations[i])
                     self.distances[i][j] = distance
                     self.distances[j][i] = distance
-        self.population = [np.arange(1, self.tspSize+1, 1) for i in range(self.max_population)]
+        self.population = [[np.arange(1, self.tspSize+1, 1)] for i in range(self.max_population)]
         for tur in self.population:
             np.random.shuffle(tur)
 
@@ -80,7 +86,7 @@ class TSPGA:
             point = neighbour[point - 1]
         return result
 
-    def isCicle(self,neighbour):
+    def isCycle(self, neighbour):
         tur = self.from_neighbour_route(neighbour)
         for point in tur:
             idx = abs(point)
@@ -88,6 +94,14 @@ class TSPGA:
                 return True
             tur[idx] = -tur[idx]
         return False
+
+    def returnNotVisited(self, visited):
+        not_visited = []
+        for i in range(0, len(visited)):
+            if visited[i]:
+                not_visited.append(i+1)
+        return random.choice(not_visited)
+
 
     def plotData(self, indices):
         # plot the dots representing the cities:
@@ -98,31 +112,39 @@ class TSPGA:
         # plot a line between each pair of consequtive cities:
         plt.plot(*zip(*locs), linestyle='-', color='blue')
         return plt
+
     def alternating_edges(self):
         for i in range(0, len(self.population)):
             if random.uniform(0, 1) <= self.crossover_chance:
                 chrom_a = self.population[i]
                 chrom_b = self.population[random.randint(0, len(self.population)-1)]
-                chrom_a_b_, chrom_b_a_ = [0 for i in range(self.tspSize)]
+                chrom_a_b_, chrom_b_a_ = chrom_a, chrom_b
+                chrom_a_b_visited, chrom_b_a_visited = [1 for i in range(0, self.tspSize)]
                 for i in range(self.tspSize):
                     idx = i % 2
                     if idx == 0:
-                        chrom_a_b_[i] = chrom_b[i]
-                        chrom_b_a_[i] = chrom_a[i]
-                    else:
-                        chrom_a_b_[i] = chrom_a[i]
-                        chrom_b_a_[i] = chrom_b[i]
+                        if chrom_a_b_visited[chrom_b[i]-1]:
+                            chrom_a_b_[i] = chrom_b[i]
+                            chrom_a_b_visited[chrom_b[i]-1] = 0
+                        else:
+                            chrom_a_b_[i] = self.returnNotVisited(chrom_a_b_visited)
+                            chrom_a_b_visited[chrom_a_b_[i]-1] = 0
 
-                if not self.isCicle(chrom_a_b_):
-                    self.children.append(chrom_a_b_)
-                if not self.isCicle(chrom_b_a_):
-                    self.children.append(chrom_a_b_)
+                        if chrom_b_a_visited[chrom_a[i]-1]:
+                            chrom_b_a_[i] = chrom_a[i]
+                            chrom_b_a_visited[chrom_a[i]-1] = 0
+                        else:
+                            chrom_b_a_[i] = self.returnNotVisited(chrom_b_a_visited)
+                            chrom_b_a_visited[chrom_b_a_[i]-1] = 0
+                self.children.append(chrom_a_b_)
+                self.children.append(chrom_b_a_)
+
 
     def selection(self):
         reselected_population = []
-        f = [self.getTotalDistance(tur) for tur in self.population]
+        f = [self.getTotalDistance(self.from_neighbour_route(tur)) for tur in self.population]
         sum_f = sum(f)
-        fitness_function = [self.getTotalDistance(tur)/sum_f for tur in self.population]
+        fitness_function = [self.getTotalDistance(self.from_neighbour_route(tur))/sum_f for tur in self.population]
         for i in range(0, self.max_population):
            for ff in range(0, int(abs(fitness_function[i]))):
                reselected_population.append(self.population[i])
@@ -130,37 +152,36 @@ class TSPGA:
                reselected_population.append(self.population[i])
         self.population = reselected_population
 
-    def crossover(self):
-        for i in range(0, len(self.population)):
-            if random.uniform(0, 1) <= self.crossover_chance:
-                chrom_a = self.population[i]
+    def crossover(self, type):
+        if type == 1:
+            self.alternating_edges()
 
-                chrom_b = self.population[random.randint(0, len(self.population)-1)]
+    def swap_mutation(self):
+        pass
 
-                k = random.randint(0, self.chromosome_length-1)
-
-                chrom_a_ = chrom_a[:k] + chrom_b[k:]
-                chrom_b_ = chrom_b[:k] + chrom_a[k:]
-
-                self.children.append(chrom_a_)
-                self.children.append(chrom_b_)
-
-    def mutation(self):
+    def mutation(self, type):
         for i in range(0, len(self.children)):
             if round(random.uniform(0, 1), 3) <= self.mutation_chance:
-                a_place = random.randint(0, len(self.children)-1)
+                a_place = random.randint(0, len(self.children) - 1)
                 chrom_a = self.children[a_place]
-                k = random.randint(0, self.chromosome_length-1)
-                temp = list(chrom_a)
-                if chrom_a[k] == '0':
-                    temp[k] = '1'
-                else:
-                    temp[k] = '0'
-                chrom_a_ = ''.join(temp)
-                self.children[a_place] = chrom_a_
+                if type == 1:
+                    k = random.randint(0, self.tspSize)
+                    k_ = random.randint(0, self.tspSize)
+                    while chrom_a[k_] == k and chrom_a[k] == k_:
+                        k = random.randint(0, self.tspSize)
+                        k_ = random.randint(0, self.tspSize)
+                    tmp = chrom_a[k]
+                    chrom_a[k] = chrom_a[k_]
+                    chrom_a[k_] = tmp
+                elif type == 2:
+                    k = random.randint(0, self.tspSize)
+                    k_ = random.randint(0, self.tspSize)
+                    while chrom_a[k] == k_:
+                        k = random.randint(0, self.tspSize)
+                self.children[a_place] = chrom_a
 
     def sort(self):
-        return lambda x: self.function(self.from_binary_to_number(x))
+        return lambda x: self.getTotalDistance(self.from_neighbour_route(x))
 
     def reduction(self):
         self.population = self.population + self.children
@@ -176,8 +197,8 @@ class TSPGA:
             self.current_epoch += 1
             start = time.time()
             self.selection()
-            self.crossover()
-            self.mutation()
+            self.crossover(self.crossover_type)
+            self.mutation(self.mutation_type)
             self.reduction()
             end = time.time()
             execution_time+=(end-start)
@@ -217,11 +238,10 @@ def main():
         "mutation_chance" : 0.2,
         "max_population" : 100,
         "max_epochs" : 100,
-        "lower_bound" : -20,
-        "upper_bound" : -3.1,
+        "crossover_type":1,
+        "mutation_type":1
     }
     GA = TSPGA(config)
-    GA.read_file()
     print(GA.getTotalDistance(indicise))
     GA.plotData(indicise)
 
